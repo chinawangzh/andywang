@@ -1,0 +1,461 @@
+# 登录帐号<a name="ZH-CN_TOPIC_0000001130474519"></a>
+
+-   [场景介绍](#section764142362120)
+-   [Authorization Code登录](#section482362015242)
+-   [业务流程](#section1074294718247)
+-   [开发步骤](#section1493417572165)
+-   [ID Token登录](#section179491049132715)
+-   [业务流程](#section15949682713)
+-   [开发步骤](#section11426171916499)
+-   [验证ID Token有效性](#section56301064278)
+
+## 场景介绍<a name="section764142362120"></a>
+
+帐号是用户访问华为生态应用的凭证，拥有帐号的用户，可以使用华为终端云服务，如华为游戏中心、华为应用市场、华为视频、华为音乐等。
+
+帐号登录基于[OAuth 2.0协议标准](https://oauth.net/2/)和[OpenID Connect协议](https://openid.net/connect/)，您的应用可以通过获取帐号用户身份认证信息（ID Token）或用户的临时授权票据（Authorization Code），使用户通过帐号安全登录您的应用。帐号支持Authorization Code和ID Token两种登录模式，Authorization Code模式仅适用于有自己服务器的应用，ID Token模式同时适用于单机应用和有自己服务器的应用。您可根据实际情况选择其中一种模式实现。
+
+## Authorization Code登录<a name="section482362015242"></a>
+
+本章节主要介绍使用Authorization Code模式登录帐号的开发步骤。
+
+## 业务流程<a name="section1074294718247"></a>
+
+![](figures/zh-cn_image_0000001130212813.png)
+
+整体流程：
+
+1.  用户选择帐号登录方式登录应用客户端。
+2.  应用客户端向帐号SDK发送请求，获取Authorization Code。
+3.  帐号SDK向HMS Core（APK）发送请求，获取Authorization Code。
+4.  HMS Core（APK）向帐号服务器发送请求，获取Authorization Code。
+5.  HMS Core（APK）展示帐号服务器的用户登录授权界面，界面上会根据登录请求中携带的授权域（scopes）信息， 显式告知用户需要授权的内容。
+6.  用户允许授权。
+7.  帐号服务器返回Authorization Code信息给HMS Core（APK）。
+8.  HMS Core（APK）返回Authorization Code信息给帐号SDK。
+9.  帐号SDK返回Authorization Code信息给应用客户端。
+10. 应用客户端将获取到的Authorization Code信息发给应用服务器。
+11. 应用服务器向帐号服务器发送请求，获取Access Token、Refresh Token、ID Token信息。
+12. 帐号服务器返回Access Token、Refresh Token、ID Token信息。
+
+## 开发步骤<a name="section1493417572165"></a>
+
+Authorization Code登录帐号功能涉及应用的关键开发步骤如下：
+
+1.  展示登录方式图标。
+
+    使用华为帐号登录时，需要在登录时展示华为帐号的图片资源文件，具体请参见[华为帐号登录图标使用规范](dev-specifications.md)。图标资源获取请参见[获取图标资源](get-channel.md)。
+
+    若您的应用需要在AppGallery以外的HMS生态平台上架时，可以使用不同平台所对应的帐号来登录，此时需要通过调用[getChannel](zh-cn_topic_0000001083614962.md#section1512412401209)接口获取对应帐号的图标资源。
+
+2.  调用[AccountAuthParamsHelper.setAuthorizationCode](zh-cn_topic_0000001130212735.md#section7825123319552)方法请求授权。
+
+    ```
+    Java
+    AccountAuthParams authParams = new AccountAuthParamsHelper(AccountAuthParams.DEFAULT_AUTH_REQUEST_PARAM).setAuthorizationCode().createParams();
+    ```
+
+    ```
+    Kotlin
+    val authParams : AccountAuthParams =  AccountAuthParamsHelper(AccountAuthParams.DEFAULT_AUTH_REQUEST_PARAM).setAuthorizationCode().createParams()
+    ```
+
+3.  调用[AccountAuthManager.getService](zh-cn_topic_0000001083295388.md)方法初始化[AccountAuthService](zh-cn_topic_0000001083614962.md)对象。
+
+    ```
+    Java
+    AccountAuthService service = AccountAuthManager.getService(MainActivity.this, authParams);
+    ```
+
+    ```
+    Kotlin
+    val service : AccountAuthService = AccountAuthManager.getService(this@MainActivity, authParams)
+    ```
+
+4.  调用[AccountAuthService.getSignInIntent](zh-cn_topic_0000001083614962.md#section76155516411)方法并展示帐号登录授权页面。
+
+    ```
+    Java
+    startActivityForResult(service.getSignInIntent(), 8888);
+    ```
+
+    ```
+    Kotlin
+    startActivityForResult(service.signInIntent, 8888)
+    ```
+
+5.  登录授权完成后处理登录结果。
+
+    ```
+    Java
+    @Override 
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        //授权登录结果处理，从AuthAccount中获取Authorization Code  
+        super.onActivityResult(requestCode, resultCode, data); 
+        if (requestCode == 8888) {
+            Task<AuthAccount> authAccountTask = AccountAuthManager.parseAuthResultFromIntent(data); 
+            if (authAccountTask.isSuccessful()) {
+                //登录成功，获取用户的帐号信息和Authorization Code 
+                AuthAccount authAccount = authAccountTask.getResult(); 
+                Log.i(TAG, "serverAuthCode:" + authAccount.getAuthorizationCode());
+            } else {
+                //登录失败
+                Log.e(TAG, "sign in failed:" + ((ApiException) authAccountTask.getException()).getStatusCode());
+            }
+        }
+    }
+    ```
+
+    ```
+    Kotlin
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        //授权登录结果处理，从AuthAccount中获取Authorization Code
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 8888) {
+            val authAccountTask = AccountAuthManager.parseAuthResultFromIntent(data)
+            if (authAccountTask.isSuccessful) {
+                //登录成功，获取用户的帐号信息和Authorization Code 
+                val authAccount = authAccountTask.result
+                Log.i(TAG, "serverAuthCode:" + authAccount.authorizationCode)
+            } else {
+                //登录失败
+                Log.e(TAG, "sign in failed:" + (authAccountTask.exception as ApiException).statusCode)
+            }
+        }
+    }
+    ```
+
+6.  登录成功后应用服务器调用[获取凭证Access Token](zh-cn_topic_0000001130397253.md)的接口向帐号服务器请求获取ID Token、Access Token、Refresh Token。
+
+    **请求参数**
+
+    <a name="t136a7a8e5dcc409081e56ed8af4dc5b3"></a>
+    <table><thead align="left"><tr id="r646f63577d97452691bc7d93cf16ca69"><th class="cellrowborder" valign="top" width="29.360000000000003%" id="mcps1.1.3.1.1"><p id="a68bff863a12a4294b9c60c6a7922f915"><a name="a68bff863a12a4294b9c60c6a7922f915"></a><a name="a68bff863a12a4294b9c60c6a7922f915"></a><strong id="aabbfd96263bc41eeb4afe843ec794e01"><a name="aabbfd96263bc41eeb4afe843ec794e01"></a><a name="aabbfd96263bc41eeb4afe843ec794e01"></a>参数</strong>名</p>
+    </th>
+    <th class="cellrowborder" valign="top" width="70.64%" id="mcps1.1.3.1.2"><p id="a20162d9913224afdb7e7c54cd2a8b011"><a name="a20162d9913224afdb7e7c54cd2a8b011"></a><a name="a20162d9913224afdb7e7c54cd2a8b011"></a><strong id="abe8f9d87cf7c4d858b61ccf1955b79d7"><a name="abe8f9d87cf7c4d858b61ccf1955b79d7"></a><a name="abe8f9d87cf7c4d858b61ccf1955b79d7"></a>描述</strong></p>
+    </th>
+    </tr>
+    </thead>
+    <tbody><tr id="r9232e6ab81f647798b93eb879dc7a43f"><td class="cellrowborder" valign="top" width="29.360000000000003%" headers="mcps1.1.3.1.1 "><p id="ad19f56a85c774a2cb147105e63885651"><a name="ad19f56a85c774a2cb147105e63885651"></a><a name="ad19f56a85c774a2cb147105e63885651"></a>grant_type</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.64%" headers="mcps1.1.3.1.2 "><p id="abddcce30e35e48c8a4a6a0e90ffef494"><a name="abddcce30e35e48c8a4a6a0e90ffef494"></a><a name="abddcce30e35e48c8a4a6a0e90ffef494"></a>OAuth 2.0规范定义的字段，该值固定填“authorization_code”。</p>
+    </td>
+    </tr>
+    <tr id="r36f5b0404c8b4b398a476bf801ef8c46"><td class="cellrowborder" valign="top" width="29.360000000000003%" headers="mcps1.1.3.1.1 "><p id="afe2250b7880740ed92d3b3609e98e1e9"><a name="afe2250b7880740ed92d3b3609e98e1e9"></a><a name="afe2250b7880740ed92d3b3609e98e1e9"></a>code</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.64%" headers="mcps1.1.3.1.2 "><p id="aecfb505e3a354e0d8f99d6e59e5d4517"><a name="aecfb505e3a354e0d8f99d6e59e5d4517"></a><a name="aecfb505e3a354e0d8f99d6e59e5d4517"></a>获取的授权码。</p>
+    </td>
+    </tr>
+    <tr id="rdf146db97cfd45358c0807bf16230d7e"><td class="cellrowborder" valign="top" width="29.360000000000003%" headers="mcps1.1.3.1.1 "><p id="a666009965622488a8e3e38f3dc570c07"><a name="a666009965622488a8e3e38f3dc570c07"></a><a name="a666009965622488a8e3e38f3dc570c07"></a>client_id</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.64%" headers="mcps1.1.3.1.2 "><p id="a0443010d5c4a4c918e35e8843d9cc49a"><a name="a0443010d5c4a4c918e35e8843d9cc49a"></a><a name="a0443010d5c4a4c918e35e8843d9cc49a"></a>AppGallery Connect中的APP ID。</p>
+    </td>
+    </tr>
+    <tr id="r3520fd5cbcbc4acfba2591afe4fcb171"><td class="cellrowborder" valign="top" width="29.360000000000003%" headers="mcps1.1.3.1.1 "><p id="a1159365f04604504b325aa26bbaf5a1f"><a name="a1159365f04604504b325aa26bbaf5a1f"></a><a name="a1159365f04604504b325aa26bbaf5a1f"></a>client_secret</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.64%" headers="mcps1.1.3.1.2 "><p id="a0a923e50c04d42ba96901c92d5d2e0f4"><a name="a0a923e50c04d42ba96901c92d5d2e0f4"></a><a name="a0a923e50c04d42ba96901c92d5d2e0f4"></a>AppGallery Connect中的APP Secret。</p>
+    </td>
+    </tr>
+    <tr id="r0ac2d6d1b8e541fc817fe0d8f7d5ea8d"><td class="cellrowborder" valign="top" width="29.360000000000003%" headers="mcps1.1.3.1.1 "><p id="a6f9127dc59454175b4f96ec241e0dbed"><a name="a6f9127dc59454175b4f96ec241e0dbed"></a><a name="a6f9127dc59454175b4f96ec241e0dbed"></a>redirect_uri</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.64%" headers="mcps1.1.3.1.2 "><p id="a026b544def914016bcce130475de720e"><a name="a026b544def914016bcce130475de720e"></a><a name="a026b544def914016bcce130475de720e"></a>AppGallery Connect中设置的<a href="set-redirect-uri.md">回调地址</a>，用于应用服务器在获取用户授权后接收Authorization Code和<a href="zh-cn_topic_0000001130397253.md">获取凭证Access Token</a>。</p>
+    </td>
+    </tr>
+    </tbody>
+    </table>
+
+    **请求示例**
+
+    ```
+    POST /oauth2/v3/token HTTP/1.1
+    Host: oauth-login.cloud.huawei.com
+    Content-Type: application/x-www-form-urlencoded
+    grant_type=authorization_code&
+    code=CF3L7XyCVZi52XMdsUzD7Z6ap0/N2qExcNe0AMqTselTtNd1B4DUwTsQ/23FPZasC8yI29v+N2s2jMT/T2MXiuc+178I/sYuWVoTyqwBaDqVW82KCMqaxbeWBguH4hEENxmDSUIE61Qg5R1F074PiS+qJYnbLI2IBqatS37px8pn5qnuq5oX+UX8XN3/w8HLt4GpakW5Dk1v7hGs&
+    client_id={app_id}&
+    client_secret={app_secret}&
+    redirect_uri=https%3A%2F%2F/www.example.com/%2Fredirect_uri
+    ```
+
+    **响应参数**
+
+    <a name="t15822a5c8271413eafcebae4ff57cc9f"></a>
+    <table><thead align="left"><tr id="r2dd62dfbdfcd4d238c00cd37a2cd38a3"><th class="cellrowborder" valign="top" width="29.32%" id="mcps1.1.3.1.1"><p id="a1d31c7caa9e541769fa56d3c3be7a004"><a name="a1d31c7caa9e541769fa56d3c3be7a004"></a><a name="a1d31c7caa9e541769fa56d3c3be7a004"></a><strong id="a16c7f45c6e0543208cb1d679954adb29"><a name="a16c7f45c6e0543208cb1d679954adb29"></a><a name="a16c7f45c6e0543208cb1d679954adb29"></a>参数</strong>名</p>
+    </th>
+    <th class="cellrowborder" valign="top" width="70.67999999999999%" id="mcps1.1.3.1.2"><p id="aa094eb9f3e6f46e685a80868ce393f38"><a name="aa094eb9f3e6f46e685a80868ce393f38"></a><a name="aa094eb9f3e6f46e685a80868ce393f38"></a><strong id="ac126a45faa844b9a9f6b5e4e4ca300c0"><a name="ac126a45faa844b9a9f6b5e4e4ca300c0"></a><a name="ac126a45faa844b9a9f6b5e4e4ca300c0"></a>描述</strong></p>
+    </th>
+    </tr>
+    </thead>
+    <tbody><tr id="r2b42800def4f448c9a1fc5d0eae09a67"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="a2fc0a81e144e418dab76b6094455eb86"><a name="a2fc0a81e144e418dab76b6094455eb86"></a><a name="a2fc0a81e144e418dab76b6094455eb86"></a>access_token</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="ac94c5af705424c13b3357e040291a681"><a name="ac94c5af705424c13b3357e040291a681"></a><a name="ac94c5af705424c13b3357e040291a681"></a>用户的Access Token。</p>
+    </td>
+    </tr>
+    <tr id="rba62be5458884809b1de4a4d5e0e262f"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="a546e2946949f4022a8c3c100004ef5d2"><a name="a546e2946949f4022a8c3c100004ef5d2"></a><a name="a546e2946949f4022a8c3c100004ef5d2"></a>refresh_token</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="p178611053618"><a name="p178611053618"></a><a name="p178611053618"></a>如果应用申请帐号服务时，入参中包含access_type=offline，则会返回此参数，该参数用于刷新Access Token。</p>
+    </td>
+    </tr>
+    <tr id="r670c59a1d5d24311975ea8cea428d77b"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="a8811c18260cb451c915db397cc9c153e"><a name="a8811c18260cb451c915db397cc9c153e"></a><a name="a8811c18260cb451c915db397cc9c153e"></a>expires_in</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="a3523ec0762b94551bf8974e3270fbbf8"><a name="a3523ec0762b94551bf8974e3270fbbf8"></a><a name="a3523ec0762b94551bf8974e3270fbbf8"></a>Access Token的剩余有效期，单位：秒。</p>
+    </td>
+    </tr>
+    <tr id="r358efa0499d7410c807564528f7fa4c2"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="a412e702b4bbe42b19b323a7548b05efe"><a name="a412e702b4bbe42b19b323a7548b05efe"></a><a name="a412e702b4bbe42b19b323a7548b05efe"></a>id_token</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="ada7a53a4983646159e236796351423f3"><a name="ada7a53a4983646159e236796351423f3"></a><a name="ada7a53a4983646159e236796351423f3"></a>返回<a href="https://jwt.io/introduction/" target="_blank" rel="noopener noreferrer">JWT格式数据</a>，包含用户基本帐号、用户邮箱等信息。</p>
+    </td>
+    </tr>
+    <tr id="r698e4523f4dd4398804f43c831bf563f"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="a1ba3e45efde7441686d2bb5a4208e763"><a name="a1ba3e45efde7441686d2bb5a4208e763"></a><a name="a1ba3e45efde7441686d2bb5a4208e763"></a>scope</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="adf9870779eb040949b41663c64864f63"><a name="adf9870779eb040949b41663c64864f63"></a><a name="adf9870779eb040949b41663c64864f63"></a>生成的凭证Access Token中包含的scope。</p>
+    </td>
+    </tr>
+    <tr id="r623b430ccd804ccd9130f342a25b99c9"><td class="cellrowborder" valign="top" width="29.32%" headers="mcps1.1.3.1.1 "><p id="ad8f2474eaee341a99cd749d3aa18c323"><a name="ad8f2474eaee341a99cd749d3aa18c323"></a><a name="ad8f2474eaee341a99cd749d3aa18c323"></a>token_type</p>
+    </td>
+    <td class="cellrowborder" valign="top" width="70.67999999999999%" headers="mcps1.1.3.1.2 "><p id="a310eb225791b40678db3537f8f28f7b8"><a name="a310eb225791b40678db3537f8f28f7b8"></a><a name="a310eb225791b40678db3537f8f28f7b8"></a>固定返回Bearer，标识返回Access Token的类型。</p>
+    </td>
+    </tr>
+    </tbody>
+    </table>
+
+    **响应示例**
+
+    ```
+    HTTP/1.1 200 OK
+    Content-Type: application/json;charset=UTF-8
+    Cache-Control: no-store
+    Pragma: no-cache 
+    {
+    "access_token": "CFyJ21sNODl16eV9y2vu3CwQk9DBr32BkOcxxgAd7MZUR5th1giyTk5\/kA+QDAyxou+\/5U2zzBRcf3qgLkkFdtbbC+mM3zFV7xj7CCEMHc5Tw92al0Y=",
+    "refresh_token": "CF13G0sRaGybtYt7SIyeUILNORtTFwMgz4ao5C7j7vtgLPt6ogmXKjdI8RS\/YlyS71z4DyP6kEMnOrRlmNK0KhdOUNWd+qVLLRsEEHkqRIKpuAkPvL8=",
+    "expires_in": 3600,
+    "id_token": "eyJraWQiOiI3YTNlYjRkNTJmMDdhODM0NDU4MmRhOGQ3MWE1MGQ5MDlmNWM0YmRiZTFkNDQ3MjQ2MDNhZTA2NGM0ZTlkZGYyIiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ.eyJhdF9oYXNoIjoiM0hPdFZYOEdMcG1GSDBWRVlSc1BjdyIsImF1ZCI6IjEwMDczNTE2NyIsInN1YiI6Ik1ERTlYaWFoc3MwaWFFNXU2c09PaEY5Mlhvell0Rkt4bUdtbWlhNGtTaEJ3dklLR2ciLCJhenAiOiIxMDA3MzUxNjciLCJpc3MiOiJodHRwczovL2FjY291bnRzLmh1YXdlaS5jb20iLCJuYW1lIjoi6Jab5oyv5Y2OIiwiZXhwIjoxNTczMDQ2NDI4LCJnaXZlbl9uYW1lIjoi6Jab5oyv5Y2OIiwiZGlzcGxheV9uYW1lIjoi5rKh5pyJ562U5qGIIiwiaWF0IjoxNTczMDQyODI4LCJwaWN0dXJlIjoiaHR0cHM6Ly91cGZpbGUtZHJjbi5wbGF0Zm9ybS5oaWNsb3VkLmNvbS9GaWxlU2VydmVyL2ltYWdlL2IuMDI2MDA4NjAwMDIzMjQ3MjUxMS4yMDE5MDgyMDExNTQ0Mi5tbmRjWTZyN2JUT0xNcVdiNVBhZDIzZExWNXh0b1Z2WC4xMDAwLkI0QkUyQTdEM0I3NkFGMzBCMkJDNjlBQ0JFNjg3NDIxMTQwMjhEQzYwREZFOTVCMjM5QkI0QzM2OUQwOUVEMkEuanBnIn0.mqy2C3ZNYEM8FKt8r1LX0VFosJjpqVl7E7mw2N-uEhnmAJq3blBco8fp2TCEyUzi1qFMN7-cjv87mQqCEpgfozyU7xV0VXMGdcd9ZhOxtabZtQGxUXRpIPiK5iysp68d95_QJAf2YZIdA4P_1zU8ZGxH57njIXRUVdQWDB8poeuB9gOc72bufe3DmSkqYD9aKvcibpA44Iln58aj-I9xs-FpcDwE6Y9hTfLGT5vk_5hXs32qwt54kEH1JjKbzZRW7B-OaELJIzzOM49oZKrdkViG6c2Tco1xX1WcKSz298Wckj4suLBAqkam4AprQgoSETC__ORTfy9OHIS1m4_8uQ",
+    "scope": "openid profile email",
+    "token_type": "Bearer"
+    }
+    ```
+
+7.  由于Access Token的有效期（目前是60分钟）较短，当Access Token失效或者即将失效时，可以使用Refresh Token（当前默认有效期180天）通过[获取凭证Access Token](zh-cn_topic_0000001130397253.md)向帐号服务器请求获取新的Access Token。
+
+    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >当Access Token失效时，若您不使用Refresh Token向帐号服务器请求获取新的Access Token，帐号的授权信息将会失效，导致使用Access Token的功能都会失败。
+
+    **请求示例**
+
+    ```
+    POST /oauth2/v3/token HTTP/1.1 
+    Host: oauth-login.cloud.huawei.com 
+    Content-Type: application/x-www-form-urlencoded 
+    grant_type=refresh_token& 
+    client_id=12345& 
+    client_secret=bKaZ0VE3EYrXaXCdCe3d2k9few& 
+    refresh_token=CF2Mm03n0aos9iZZ8nIhfyDtoXy74CXeBi50gVVhMpB0IUzlv9ZwizEvTBhVoF820ZPim0JwNR9j2p1qgEQWnIVYZRlp4T6ezMgekUnsHBkvNev5rd2MdfQMLP
+    ```
+
+    **响应示例**
+
+    ```
+    HTTP/1.1 200 OK 
+    Content-Type: application/json;charset=UTF-8 
+    Cache-Control: no-store 
+    Pragma: no-cache 
+    { 
+    "access_token": "CFyJ4J\/l6wuwcFqYOJG4maq2ca8RAV+g0i+mel6qCV5lvqH0PYtW0+BNwfHWg0AqMnW6ZdBvUgs7ijkxMFh1xVP\/B+vQXz3PWsivkKCuL78XtbLt7vs=", 
+    "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjExOGRmMjU0YjgzNzE4OWQxYmMyYmU5NjUwYTgyMTEyYzAwZGY1YTQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhenAiOiI3ODI0NTY2Njc4OTgtc2M0MzE3Y2l0NGEwMjB0NzdrbGdsbWo1ZjA4YWtnMWIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiI3ODI0NTY2Njc4OTgtN2NkNGJpYWRkaGVwNGc4cnZic2VlOGtwcDA5Zm1hNzIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMDE3MTIxMzkwMzgwNDE2MDc0MTQiLCJlbWFpbCI6Inh1ZXpoZW5odWF0anVAc2luYS5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGljdHVyZSI6Imh0dHBzOi8vbGg1Lmdvb2dsZXVzZXJjb250ZW50LmNvbS8tMm9lTTllT09zNTAvQUFBQUFBQUFBQUkvQUFBQUFBQUFBQkkvMVpOSC0xdmxxc3cvczk2LWMvcGhvdG8uanBnIiwiaWF0IjoxNTYxNDUxMTUyLCJleHAiOjE1NjE0NTQ3NTJ9.Eo9IHMkid596jvt1YYzNsRtDq9c9K9dbougkU41Noh7TXNiko86_RuWwHID6k1kDg398AwC3wwH-t2hLcUjgrXPNd9XYU96Jp4-UxdDszP6ywEJgvvBCyTHzsi2auvKt_MnfSrs3qOKfh7noJvXq8AY-Hi3vqSUks5kGqbZKVzCHhBDO3RD9Fs9YHsB6w0XVKZojPOBDaAT_TiijoChn-Q-e8NbSGUx52OgeH-Nw5lOj6JVb_7fb6ucWRzlhiQuzFjklevLVw2pjw1MxKbl1vfRp0X699uZBVjgl9hj1L7LSDObuPzLiXF7ojji5JKYC6zIwAtZQUZ_VUmSk01GDLQ", 
+    "expires_in": 3600, 
+    "scope": "openid profile email", 
+    "token_type": "Bearer" 
+    }
+    ```
+
+
+## ID Token登录<a name="section179491049132715"></a>
+
+本章节主要介绍使用ID Token模式登录帐号的开发步骤。
+
+## 业务流程<a name="section15949682713"></a>
+
+![](figures/zh-cn_image_0000001083166966.png)
+
+整体流程：
+
+1.  用户选择帐号登录方式登录应用客户端。
+2.  应用客户端调用[setIdToken](zh-cn_topic_0000001130212735.md#section7927324133511)请求授权。
+3.  帐号SDK向应用客户端返回响应。
+4.  应用客户端调用[AccountAuthManager.getService](zh-cn_topic_0000001083295388.md#section1354442711181)方法初始化[AccountAuthService](zh-cn_topic_0000001083614962.md)对象。
+5.  应用客户端获取到[AccountAuthService](zh-cn_topic_0000001083614962.md)对象。
+6.  应用客户端调用[getSignInIntent](zh-cn_topic_0000001083614962.md#section76155516411)获取登录页面。
+7.  帐号SDK向应用客户端返回登录页面的Intent对象。
+8.  应用客户端通过startActivityForResult方法跳转到登录页面。
+9.  帐号服务器检查帐号登录情况。
+10. 帐号SDK展示帐号登录页面。
+11. 用户输入帐号信息。
+12. 帐号服务器检查帐号授权情况。
+13. 帐号SDK展示授权登录页面。
+14. 用户确认授权。
+15. 帐号SDK将授权登录结果返回到应用的onActivityResult方法中。
+16. 应用客户端调用[parseAuthResultFromIntent](zh-cn_topic_0000001083295388.md#section1922017816259)获取[AuthAccount](zh-cn_topic_0000001083614964.md)对象。
+17. 应用客户端获取到ID Token后，去帐号服务器[验证ID Token有效性](#section56301064278)。
+
+## 开发步骤<a name="section11426171916499"></a>
+
+ID Token登录帐号功能涉及应用的关键开发步骤如下：
+
+1.  展示登录方式图标。
+
+    使用华为帐号登录时，需要在登录时展示华为帐号的图片资源文件，具体请参见[华为帐号登录图标使用规范](dev-specifications.md)。图标资源获取请参见[获取图标资源](get-channel.md)。
+
+    若您的应用需要在AppGallery以外的HMS生态平台上架时，可以使用不同平台所对应的帐号来登录，此时需要通过调用[getChannel](zh-cn_topic_0000001083614962.md#section1512412401209)接口获取对应帐号的图标资源。
+
+2.  调用[AccountAuthParamsHelper.setIdToken](zh-cn_topic_0000001063512337.md#section7927324133511)方法请求授权。
+
+    ```
+    Java
+    AccountAuthParams authParams = new AccountAuthParamsHelper(AccountAuthParams.DEFAULT_AUTH_REQUEST_PARAM).setIdToken().createParams();
+    ```
+
+    ```
+    Kotlin
+    val authParams : AccountAuthParams = AccountAuthParamsHelper(AccountAuthParams.DEFAULT_AUTH_REQUEST_PARAM).setIdToken().createParams()
+    ```
+
+3.  调用[AccountAuthManager.getService](zh-cn_topic_0000001063940371.md#section1354442711181)方法初始化[AccountAuthService](zh-cn_topic_0000001064300370.md)对象。
+
+    ```
+    Java
+    AccountAuthService service = AccountAuthManager.getService(MainActivity.this, authParams);
+    ```
+
+    ```
+    Kotlin
+    val service : AccountAuthService = AccountAuthManager.getService(this@MainActivity, authParams)
+    ```
+
+4.  调用[AccountAuthService.getSignInIntent](zh-cn_topic_0000001064300370.md#section76155516411)方法并展示帐号登录授权页面。
+
+    ```
+    Java
+    startActivityForResult(service.getSignInIntent(), 8888);
+    ```
+
+    ```
+    Kotlin
+    startActivityForResult(service.signInIntent, 8888)
+    ```
+
+5.  登录授权完成后在页面的onActivityResult中调用[AccountAuthManager.parseAuthResultFromIntent](zh-cn_topic_0000001063940371.md#section1922017816259)方法从登录结果中获取帐号信息。登录成功后，应用可根据[authAccount.getAccountFlag](zh-cn_topic_0000001083614964.md#section155944155317)的结果判断当前登录帐号的渠道类型。
+
+    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >authAccount.getAccountFlag返回当前登录帐号的渠道类型。
+    >-   0：代表华为帐号，调用服务端接口请用此URL：https://oauth-login.cloud.huawei.com/xxx。
+    >-   1：代表AppTouch帐号，调用服务端接口请用此URL：https://oauth-login-at.cloud.huawei.com/xxx。
+
+    ```
+    Java
+    @Override 
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        //授权登录结果处理，从AuthAccount中获取ID Token
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 8888) {
+            Task<AuthAccount> authAccountTask = AccountAuthManager.parseAuthResultFromIntent(data);
+            if (authAccountTask.isSuccessful()) {
+                //登录成功，获取用户的帐号信息和ID Token
+                AuthAccount authAccount = authAccountTask.getResult();
+                Log.i(TAG, "idToken:" + authAccount.getIdToken());
+                //获取帐号类型，0表示华为帐号、1表示AppTouch帐号
+                Log.i(TAG, "accountFlag:" + authAccount.getAccountFlag());
+            } else {
+                //登录失败，不需要做处理，打点日志方便定位
+                Log.e(TAG, "sign in failed : " +((ApiException) authAccountTask.getException()).getStatusCode());
+            }
+        }
+    }
+    ```
+
+    ```
+    Kotlin
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        //授权登录结果处理，从AuthAccount中获取ID Token
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 8888) {
+            val authAccountTask = AccountAuthManager.parseAuthResultFromIntent(data)
+            if (authAccountTask.isSuccessful) {
+                //登录成功，获取用户的帐号信息和ID Token
+                val authAccount = authAccountTask.result
+                Log.i(TAG, "idToken:" + authAccount.idToken)
+                //获取帐号类型，0表示华为帐号、1表示AppTouch帐号
+                Log.i(TAG, "accountFlag:" + authAccount.accountFlag);
+            } else {
+                //登录失败，不需要做处理，打点日志方便定位
+                Log.e(TAG, "sign in failed : " + (authAccountTask.exception as ApiException).statusCode)
+            }
+        }
+    }
+    ```
+
+
+## 验证ID Token有效性<a name="section56301064278"></a>
+
+**方式一：应用服务器验证（推荐）**
+
+步骤请参见应用服务器的[ID Token本地验证签名](open-platform-oauth.md#section1991115414569)。
+
+**方式二：本地验证**
+
+1.  从[https://oauth-login.cloud.huawei.com/.well-known/openid-configuration](https://oauth-login.cloud.huawei.com/.well-known/openid-configuration)的返回值中的jwks\_uri字段获取公钥URI，访问公钥URI获取公钥。公钥每天更新一次，应用服务器可以缓存公钥的值。
+2.  验证签名。ID Token是JWT格式的，验证ID Token的签名可以采用通用的JWT库，例如[jwt.io](https://jwt.io/)。
+
+    >![](public_sys-resources/icon-note.gif) **说明：** 
+    >JWT仅支持Android 9.0及以上版本使用。
+
+3.  验证ID Token中iss字段的值是否等于“https://accounts.huawei.com”。
+4.  验证ID Token中aud字段的值等于应用的client\_id。
+5.  验证ID Token中的过期时间（exp字段）是否已过期。
+
+如果以上验证均通过，则表示用户ID Token验证通过，应用可使用登录结果中的用户信息。
+
+**方式三：华为服务器验证**
+
+应用调用[验证ID Token有效性](zh-cn_topic_0000001130212731.md)的接口向帐号服务器发送ID Token验证请求，帐号服务器向应用直接返回验证结果。
+
+>![](public_sys-resources/icon-note.gif) **说明：** 
+>由于调用[验证ID Token有效性](zh-cn_topic_0000001130212731.md)的接口会带来耗时，并且受网络状况的影响，所以服务器验证方式只能用于调试目的，在商用环境需要采用应用服务器验证的方式。
+
+**请求示例**
+
+```
+POST /oauth2/v3/tokeninfo? HTTP/1.1
+Host: oauth-login.cloud.huawei.com
+Content-Type: application/x-www-form-urlencoded
+id_token=eyJraWQiOiI2YTI4ODBjNWQ2YTg4Y2M0NjQzZTg4ZWI2ODBlMDUxOTdkNWJlYmQ4NTVhNDdiNzE3NTdmYzFiOTUzMDgwOWNhIiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ.eyJhdF9oYXNoIjoiRHg1V1V3VXpQZWxBTC1TS3VBdldVZyIsInN1YiI6Ik1ERUxhWkd4UTlXaHFIVnFrRVZZcVZYblF5TFhqcDhyVmhmbWxScHg4SjlYclEiLCJob21lX2NvdW50cnlfY29kZSI6IkNOIiwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5odWF3ZWkuY29tIiwiZ2l2ZW5fbmFtZSI6IuiWm-aMr-WNjiIsImxvY2FsZSI6InpoLWNuIiwiZGlzcGxheV9uYW1lIjoi56m65oyH6ZKIMeWPtyIsIm5vbmNlIjoic2FsZmRqb2p1aWV3cnJsa2pkc2Zmc2QiLCJyZWdpc3Rlcl9jb3VudHJ5X2NvZGUiOiJDTiIsImF1ZCI6IjMwMDAzNTIzMyIsImF6cCI6IjMwMDAzNTIzMyIsIm5hbWUiOiLolpvmjK_ljY4iLCJleHAiOjE1NjM4MjM5MDksImlhdCI6MTU2MzgyMDMwOSwiZW1haWwiOiIxNTIyMDI2NjU4MyJ9.cQdyVC7RPl9V6xjPjsRYdKapPb3ZNZPu4FLNMuPZxhoSwENDvvQBRc5_W-kNBmWMh-HxhDwmVPWValubXy-vPey6grUuwDmOQQRYyIsg0nHTBA91LmRIVrWLllpiEbqij_ExsDz2ThCcFoTZ2kXGEoJ2jnBIb17pHuG7USNLTGb7NayBZJrKBl85lo9V8lgMjj3hcMMPVWrF1pRWhWVNy3hOvMSf9n_l309Xn1Rd6lVUaTJtqC0NbpjmLMSj4OGGtvKICIBQlUw46-6rZqxY0DaU8ZrvK8mcWIf9XaHMAZIucOkVdgT3u3sUw1Dy8m8Cr-9zt_wixJMPEm4CMPHA-Q
+```
+
+**响应示例**
+
+```
+HTTP/1.1 200 OK 
+Content-Type: application/json;charset=UTF-8 
+Cache-Control: no-store 
+Pragma: no-cache 
+{
+    "at_hash": "Dx5WUwUzPelAL-SKuAvWUg",
+    "sub": "MDELaZGxQ9WhqHVqkEVYqVXnQyLXjp8rVhfmlRpx8J9XrQ",
+    "kid": "6a2880c5d6a88cc4643e88eb680e05197d5bebd855a47b71757fc1b9530809ca",
+    "iss": "https://accounts.huawei.com",
+    "typ": "JWT",
+    "given_name": "张三",
+    "locale": "zh-cn",
+    "display_name": "Jack",
+    "nonce": "salfdjojuiewrrlkjdsffsd",
+    "register_country_code": "CN",
+    "aud": "300035233",
+    "azp": "300035233",
+    "name": "张三",
+    "exp": 1563823909,
+    "iat": 1563820309,
+    "alg": "RS256",
+    "email": "zhangsan@example.com"
+}
+```
+
